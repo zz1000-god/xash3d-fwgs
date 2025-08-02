@@ -23,21 +23,26 @@ GNU General Public License for more details.
 #include "input.h"
 #include "server.h"
 
-static qboolean cl_allow_fake_clients = false;
+static qboolean is_dproto_server = false;
 
 static void CL_ParseExtraInfo( sizebuf_t *msg )
 {
 	string clientfallback;
 
 	Q_strncpy( clientfallback, MSG_ReadString( msg ), sizeof( clientfallback ));
+	
+	// Автоматично визначаємо dproto сервер
 	if( COM_CheckStringEmpty( clientfallback ))
+	{
 		Con_Reportf( S_ERROR "%s: TODO: add fallback directory %s!\n", __func__, clientfallback );
+		// Перевіряємо чи це dproto сервер
+		if( Q_stristr( clientfallback, "dproto" ) || Q_stristr( clientfallback, "rehlds" ))
+			is_dproto_server = true;
+	}
 
 	if( MSG_ReadByte( msg ))
 	{
 		Cvar_FullSet( "sv_cheats", "1", FCVAR_READ_ONLY | FCVAR_SERVER );
-		if( Q_stristr( clientfallback, "dproto" ) || cl_dproto_mode.value )
-			cl_allow_fake_clients = true;
 	}
 	else
 	{
@@ -229,10 +234,10 @@ static void CL_DeltaEntityGS( const delta_header_t *hdr, sizebuf_t *msg, frame_t
 
 	if(( newnum < 0 ) || ( newnum >= clgame.maxEntities ))
 	{
-		// Для dproto серверів більш м'яка обробка помилок
-		if( cl_allow_fake_clients )
+		// Для dproto серверів не падаємо, а просто пропускаємо
+		if( is_dproto_server )
 		{
-			Con_DPrintf( S_WARN "CL_DeltaEntity: invalid newnum on dproto: %d, skipping\n", newnum );
+			Con_DPrintf( S_WARN "CL_DeltaEntity: invalid newnum on dproto server: %d, skipping\n", newnum );
 			return;
 		}
 		
@@ -246,10 +251,11 @@ static void CL_DeltaEntityGS( const delta_header_t *hdr, sizebuf_t *msg, frame_t
 	{
 		if( !newent )
 			CL_KillDeadBeams( ent );
-		else if( !cl_allow_fake_clients ) // Тільки попереджуємо якщо не dproto
+		else if( !is_dproto_server ) // Показуємо попередження тільки для звичайних серверів
 			Con_Printf( S_WARN "%s: entity remove on non-delta update (%d)\n", __func__, newnum );
 		return;
 	}
+
 	ent->index = newnum;
 	if( newent )
 	{
@@ -597,27 +603,50 @@ void CL_ParseGoldSrcServerMessage( sizebuf_t *msg )
 			CL_Drop ();
 			Host_AbortCurrentFrame ();
 			break;
+		case svc_goldsrc_version:
+			param1 = MSG_ReadLong( msg );
+			// Дозволяємо протокол 47 і 48 для XAH 3D
+			if( param1 != PROTOCOL_GOLDSRC_VERSION && param1 != 47 && param1 != 48 )
+				Host_Error( "Server use invalid protocol (%i should be %i)\n", param1, PROTOCOL_GOLDSRC_VERSION );
+			
+			// Якщо протокол 47 або нестандартний - вважаємо що це може бути dproto
+			if( param1 != PROTOCOL_GOLDSRC_VERSION )
+			{
+				Con_Printf( "Non-standard protocol %d detected, enabling compatibility mode\n", param1 );
+				is_dproto_server = true;
+			}
+			break;
+		case svc_stufftext:
+			s = MSG_ReadString( msg );
+			if( cl_trace_stufftext.value )
+			{
+				size_t len = Q_strlen( s );
+				Con_Printf( "Stufftext: %s%c", s, len && s[len-1] == '\n' ? '\0' : '\n' );
+			}
+
+#ifdef HACKS_RELATED_HLMODS
+			// disable Cry Of Fear antisave protection
+			if( !Q_strnicmp( s, "disconnect", 10 ) && cls.signon != SIGNONS )
+				break; // too early
+#endif
+
+			// Обходимо fake client команди для dproto серверів
+			if( is_dproto_server && 
+				(Q_stristr( s, "fake" ) || Q_stristr( s, "bot" ) || Q_stristr( s, "kick" )) )
+			{
+				Con_DPrintf( "Bypassing potentially problematic command: %s\n", s );
+				break;
+			}
+
+			Cbuf_AddFilteredText( s );
+			break;
+			
+		// Всі інші cases залишаються без змін
 		case svc_event:
 			MSG_StartBitWriting( msg );
 			CL_ParseEvent( msg, PROTO_GOLDSRC );
 			MSG_EndBitWriting( msg );
 			cl.frames[cl.parsecountmod].graphdata.event += MSG_GetNumBytesRead( msg ) - bufStart;
-			break;
-		case svc_goldsrc_version:
-			param1 = MSG_ReadLong( msg );
-			// Дозволяємо різні версії протоколу для XAH 3D
-			if( param1 != PROTOCOL_GOLDSRC_VERSION )
-			{
-				if( cl_xah3d_support.value && (param1 == 47 || param1 == 48) )
-				{
-					Con_Printf( "XAH 3D protocol version %d detected\n", param1 );
-					cl_allow_fake_clients = true;
-				}
-				else
-				{
-					Host_Error( "Server use invalid protocol (%i should be %i)\n", param1, PROTOCOL_GOLDSRC_VERSION );
-				}
-			}
 			break;
 		case svc_setview:
 			CL_ParseViewEntity( msg );
@@ -632,29 +661,6 @@ void CL_ParseGoldSrcServerMessage( sizebuf_t *msg )
 		case svc_print:
 			Con_Printf( "%s", MSG_ReadString( msg ));
 			break;
-		case svc_stufftext:
-			s = MSG_ReadString( msg );
-			if( cl_trace_stufftext.value )
-			{
-				size_t len = Q_strlen( s );
-				Con_Printf( "Stufftext: %s%c", s, len && s[len-1] == '\n' ? '\0' : '\n' );
-			}
-
-#ifdef HACKS_RELATED_HLMODS
-	// disable Cry Of Fear antisave protection
-	if( !Q_strnicmp( s, "disconnect", 10 ) && cls.signon != SIGNONS )
-		break; // too early
-#endif
-
-	// Додаємо обхід для XAH 3D fake client команд
-	if( cl_allow_fake_clients && Q_stristr( s, "fake" ) )
-	{
-		Con_DPrintf( "Bypassing fake client command for XAH 3D: %s\n", s );
-		break;
-	}
-
-	Cbuf_AddFilteredText( s );
-	break;
 		case svc_setangle:
 			CL_ParseSetAngle( msg );
 			break;
@@ -787,8 +793,6 @@ void CL_ParseGoldSrcServerMessage( sizebuf_t *msg )
 			CL_ParseExtraInfo( msg );
 			break;
 		case svc_goldsrc_timescale:
-			// we can set sys_timescale to anything we want but in GoldSrc it's locked for
-			// HLTV and demoplayback. Do we really want to have it then if both are out of scope?
 			Con_Reportf( S_ERROR "%s: svc_goldsrc_timescale: implement me!\n", __func__ );
 			MSG_ReadFloat( msg );
 			break;
