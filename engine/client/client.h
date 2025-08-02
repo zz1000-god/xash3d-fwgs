@@ -116,6 +116,14 @@ extern int CL_UPDATE_BACKUP;
 #define cl_serverframetime()	(cl.mtime[0] - cl.mtime[1])
 #define cl_clientframetime()	(cl.time - cl.oldtime)
 
+CVAR_DEFINE_AUTO( cl_dproto_mode, "0", FCVAR_ARCHIVE, "enable dproto server compatibility mode" );
+
+// Дозволяє підтримку XAH 3D клієнтів
+CVAR_DEFINE_AUTO( cl_xah3d_support, "1", FCVAR_ARCHIVE, "enable XAH 3D client support" );
+
+// Дозволяє обхід fake client перевірок
+CVAR_DEFINE_AUTO( cl_allow_fake_bypass, "0", FCVAR_ARCHIVE, "bypass fake client checks" );
+
 typedef struct
 {
 	// got from prediction system
