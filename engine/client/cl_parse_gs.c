@@ -51,12 +51,6 @@ static void CL_ParseExtraInfo( sizebuf_t *msg )
 	}
 }
 
-void CL_InitDproto( void )
-{
-	Cvar_RegisterVariable( &cl_dproto_mode );
-	Cvar_RegisterVariable( &cl_xah3d_support );
-}
-
 static void CL_ParseNewMovevars( sizebuf_t *msg )
 {
 	Delta_InitClient(); // finalize client delta's
