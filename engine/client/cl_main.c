@@ -30,6 +30,14 @@ GNU General Public License for more details.
 #define CL_CONNECTION_RETRIES 10
 #define CL_TEST_RETRIES       5
 
+CVAR_DEFINE_AUTO( cl_dproto_mode, "0", FCVAR_ARCHIVE, "enable dproto server compatibility mode" );
+
+// Дозволяє підтримку XAH 3D клієнтів
+CVAR_DEFINE_AUTO( cl_xah3d_support, "1", FCVAR_ARCHIVE, "enable XAH 3D client support" );
+
+// Дозволяє обхід fake client перевірок
+CVAR_DEFINE_AUTO( cl_allow_fake_bypass, "0", FCVAR_ARCHIVE, "bypass fake client checks" );
+
 CVAR_DEFINE_AUTO( showpause, "1", 0, "show pause logo when paused" );
 CVAR_DEFINE_AUTO( mp_decals, "300", FCVAR_ARCHIVE, "decals limit in multiplayer" );
 static CVAR_DEFINE_AUTO( dev_overview, "0", 0, "draw level in overview-mode" );
