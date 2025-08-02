@@ -23,6 +23,8 @@ GNU General Public License for more details.
 #include "input.h"
 #include "server.h"
 
+static qboolean cl_allow_fake_clients = false;
+
 static void CL_ParseExtraInfo( sizebuf_t *msg )
 {
 	string clientfallback;
@@ -34,12 +36,20 @@ static void CL_ParseExtraInfo( sizebuf_t *msg )
 	if( MSG_ReadByte( msg ))
 	{
 		Cvar_FullSet( "sv_cheats", "1", FCVAR_READ_ONLY | FCVAR_SERVER );
+		if( Q_stristr( clientfallback, "dproto" ) || cl_dproto_mode.value )
+			cl_allow_fake_clients = true;
 	}
 	else
 	{
 		Cvar_SetCheatState();
 		Cvar_FullSet( "sv_cheats", "0", FCVAR_READ_ONLY | FCVAR_SERVER );
 	}
+}
+
+void CL_InitDproto( void )
+{
+	Cvar_RegisterVariable( &cl_dproto_mode );
+	Cvar_RegisterVariable( &cl_xah3d_support );
 }
 
 static void CL_ParseNewMovevars( sizebuf_t *msg )
@@ -219,6 +229,13 @@ static void CL_DeltaEntityGS( const delta_header_t *hdr, sizebuf_t *msg, frame_t
 
 	if(( newnum < 0 ) || ( newnum >= clgame.maxEntities ))
 	{
+		// Для dproto серверів більш м'яка обробка помилок
+		if( cl_allow_fake_clients )
+		{
+			Con_DPrintf( S_WARN "CL_DeltaEntity: invalid newnum on dproto: %d, skipping\n", newnum );
+			return;
+		}
+		
 		Con_DPrintf( S_ERROR "CL_DeltaEntity: invalid newnum: %d\n", newnum );
 		Host_Error( "%s: bad delta entity number: %i\n", __func__, newnum );
 		return;
@@ -229,12 +246,11 @@ static void CL_DeltaEntityGS( const delta_header_t *hdr, sizebuf_t *msg, frame_t
 	{
 		if( !newent )
 			CL_KillDeadBeams( ent );
-		else
+		else if( !cl_allow_fake_clients ) // Тільки попереджуємо якщо не dproto
 			Con_Printf( S_WARN "%s: entity remove on non-delta update (%d)\n", __func__, newnum );
 		return;
 	}
-
-	ent->index = newnum; // enumerate entity index
+	ent->index = newnum;
 	if( newent )
 	{
 		if( hdr->instanced )
@@ -254,20 +270,11 @@ static void CL_DeltaEntityGS( const delta_header_t *hdr, sizebuf_t *msg, frame_t
 
 	if( newent )
 	{
-		// interpolation must be reset
 		SETVISBIT( frame->flags, pack );
-
-		// release beams from previous entity
-
-		// a1ba: check that this entity number was never used on client
-		// as beams can be transferred before this entity was sent to client
-		// (for example, beam was sent over during beam entity spawn
-		// but referenced start point entity hasn't been sent over due to PVS)
 		if( ent->curstate.messagenum != 0 )
 			CL_KillDeadBeams( ent );
 	}
 
-	// add entity to packet
 	cls.next_client_entities++;
 	frame->num_entities++;
 }
@@ -598,8 +605,19 @@ void CL_ParseGoldSrcServerMessage( sizebuf_t *msg )
 			break;
 		case svc_goldsrc_version:
 			param1 = MSG_ReadLong( msg );
+			// Дозволяємо різні версії протоколу для XAH 3D
 			if( param1 != PROTOCOL_GOLDSRC_VERSION )
-				Host_Error( "Server use invalid protocol (%i should be %i)\n", param1, PROTOCOL_GOLDSRC_VERSION );
+			{
+				if( cl_xah3d_support.value && (param1 == 47 || param1 == 48) )
+				{
+					Con_Printf( "XAH 3D protocol version %d detected\n", param1 );
+					cl_allow_fake_clients = true;
+				}
+				else
+				{
+					Host_Error( "Server use invalid protocol (%i should be %i)\n", param1, PROTOCOL_GOLDSRC_VERSION );
+				}
+			}
 			break;
 		case svc_setview:
 			CL_ParseViewEntity( msg );
@@ -623,12 +641,20 @@ void CL_ParseGoldSrcServerMessage( sizebuf_t *msg )
 			}
 
 #ifdef HACKS_RELATED_HLMODS
-			// disable Cry Of Fear antisave protection
-			if( !Q_strnicmp( s, "disconnect", 10 ) && cls.signon != SIGNONS )
-				break; // too early
+	// disable Cry Of Fear antisave protection
+	if( !Q_strnicmp( s, "disconnect", 10 ) && cls.signon != SIGNONS )
+		break; // too early
 #endif
-			Cbuf_AddFilteredText( s );
-			break;
+
+	// Додаємо обхід для XAH 3D fake client команд
+	if( cl_allow_fake_clients && Q_stristr( s, "fake" ) )
+	{
+		Con_DPrintf( "Bypassing fake client command for XAH 3D: %s\n", s );
+		break;
+	}
+
+	Cbuf_AddFilteredText( s );
+	break;
 		case svc_setangle:
 			CL_ParseSetAngle( msg );
 			break;
