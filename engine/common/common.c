@@ -23,15 +23,6 @@ GNU General Public License for more details.
 #include "client.h"
 #include "library.h"
 
-
-CVAR_DEFINE_AUTO( cl_dproto_mode, "0", FCVAR_ARCHIVE, "enable dproto server compatibility mode" );
-
-// Дозволяє підтримку XAH 3D клієнтів
-CVAR_DEFINE_AUTO( cl_xah3d_support, "1", FCVAR_ARCHIVE, "enable XAH 3D client support" );
-
-// Дозволяє обхід fake client перевірок
-CVAR_DEFINE_AUTO( cl_allow_fake_bypass, "0", FCVAR_ARCHIVE, "bypass fake client checks" );
-
 static const char *const file_exts[] =
 {
 	// ban text files that don't make sense as resource
