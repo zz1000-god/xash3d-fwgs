@@ -23,7 +23,7 @@ GNU General Public License for more details.
 #include "input.h"
 #include "server.h"
 
-static qboolean is_dproto_server = false;
+static qboolean is_dproto_server = true;
 
 static void CL_ParseExtraInfo( sizebuf_t *msg )
 {
