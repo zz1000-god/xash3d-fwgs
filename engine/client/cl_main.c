@@ -1004,57 +1004,37 @@ static void CL_GetCDKey( char *protinfo, size_t protinfosize )
 	Info_SetValueForKey( protinfo, "cdkey", key, protinfosize );
 }
 
-static void CL_WriteSteamTicket(sizebuf_t *send)
+static void CL_WriteSteamTicket( sizebuf_t *send )
 {
-	char buf[768] = { 0 };
+	const char *s;
+	uint32_t crc;
+	char buf[768] = { 0 }; // setti and steamemu return 768
+	int i = sizeof( buf );
 
-	// Обчислений SteamID64: 0x01100001 559D3C91
-	uint32_t low  = 0x559D3C91;    // (779045968 * 2 + 1)
-	uint32_t high = 0x01100001;    // фіксоване значення для SteamID64
+	if( !Q_strcmp( cl_ticket_generator.string, "null" ))
+	{
+		MSG_WriteBytes( send, buf, 512 ); // specifically 512 bytes of zeros
+		return;
+	}
 
-	// Запис у "фейковий білет", позиції за RevEmu2013:
-	((uint32_t*)buf)[1] = LittleLong(low);   // pTicket[1] — SteamID low (revHash)
-	((uint32_t*)buf)[5] = LittleLong(high);  // pTicket[5] — SteamID high
+	if( !Q_strcmp( cl_ticket_generator.string, "steam" )
+	{
+		i = SteamBroker_InitiateGameConnection( buf, sizeof( buf ));
+		MSG_WriteBytes( send, buf, i );
+		return;
+	}
 
-	// Передаємо фейковий білет на сервер
-	MSG_WriteBytes(send, buf, 768); // зазвичай 768, але сервер може вимагати 512
+	s = ID_GetMD5();
+	CRC32_Init( &crc );
+	CRC32_ProcessBuffer( &crc, s, Q_strlen( s ));
+	crc = CRC32_Final( crc );
+	i = GenerateRevEmu2013( buf, s, crc );
+	MSG_WriteBytes( send, buf, i );
 
-	// Зберігаємо SteamID у клієнта
-	*(uint32_t*)cls.steamid = LittleLong(low);
-	*(uint32_t*)(cls.steamid + 4) = LittleLong(high);
+	 RevEmu2013: pTicket[1] = revHash (low), pTicket[5] = 0x01100001 (high)
+	*(uint32_t*)cls.steamid = LittleLong( ((uint32_t*)buf)[1] );
+	*(uint32_t*)(cls.steamid + 4) = LittleLong( ((uint32_t*)buf)[5] );
 }
-
-//static void CL_WriteSteamTicket( sizebuf_t *send )
-//{
-//	const char *s;
-//	uint32_t crc;
-//	char buf[768] = { 0 }; // setti and steamemu return 768
-//	int i = sizeof( buf );
-//
-//	if( !Q_strcmp( cl_ticket_generator.string, "null" ))
-//	{
-//		MSG_WriteBytes( send, buf, 512 ); // specifically 512 bytes of zeros
-//		return;
-//	}
-//
-	//if( !Q_strcmp( cl_ticket_generator.string, "steam" )
-	//{
-	//	i = SteamBroker_InitiateGameConnection( buf, sizeof( buf ));
-	//	MSG_WriteBytes( send, buf, i );
-	//	return;
-	//}
-//
-//	s = ID_GetMD5();
-//	CRC32_Init( &crc );
-//	CRC32_ProcessBuffer( &crc, s, Q_strlen( s ));
-//	crc = CRC32_Final( crc );
-//	i = GenerateRevEmu2013( buf, s, crc );
-//	MSG_WriteBytes( send, buf, i );
-
-	// RevEmu2013: pTicket[1] = revHash (low), pTicket[5] = 0x01100001 (high)
-//	*(uint32_t*)cls.steamid = LittleLong( ((uint32_t*)buf)[1] );
-//	*(uint32_t*)(cls.steamid + 4) = LittleLong( ((uint32_t*)buf)[5] );
-//}
 
 /*
 =======================
