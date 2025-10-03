@@ -79,6 +79,7 @@ static const char *Android_GetPackageName( qboolean engine )
 	resultCStr = (*jni.env)->GetStringUTFChars( jni.env, resultJNIStr, NULL );
 	Q_strncpy( pkg, resultCStr, sizeof( pkg ));
 	(*jni.env)->ReleaseStringUTFChars( jni.env, resultJNIStr, resultCStr );
+	(*jni.env)->DeleteLocalRef( jni.env, resultJNIStr );
 
 	return pkg;
 }
@@ -96,7 +97,11 @@ static void Android_ListDirectory( stringlist_t *list, const char *path, qboolea
 
 		stringlistappend( list, (char *)CStr );
 		(*jni.env)->ReleaseStringUTFChars( jni.env, JNIStr, CStr );
+		(*jni.env)->DeleteLocalRef( jni.env, JNIStr );
 	}
+
+	(*jni.env)->DeleteLocalRef( jni.env, JNIArray );
+	(*jni.env)->DeleteLocalRef( jni.env, JStr );
 }
 
 static void FS_CloseAndroidAssets( android_assets_t *assets )
@@ -116,6 +121,7 @@ static android_assets_t *FS_LoadAndroidAssets( qboolean engine )
 	Android_GetAssetManager( assets );
 	if( !assets->asset_manager )
 	{
+		Con_Printf( S_ERROR "%s: Can't get asset manager\n", __func__ );
 		FS_CloseAndroidAssets( assets );
 		return NULL;
 	}
@@ -123,6 +129,7 @@ static android_assets_t *FS_LoadAndroidAssets( qboolean engine )
 	assets->dir = AAssetManager_openDir( assets->asset_manager, "" );
 	if( !assets->dir )
 	{
+		Con_Printf( S_ERROR "%s: Can't open root asset directory\n", __func__ );
 		FS_CloseAndroidAssets( assets );
 		return NULL;
 	}
@@ -138,7 +145,7 @@ static int FS_FileTime_AndroidAssets( searchpath_t *search, const char *filename
 	{
 		struct tm file_tm;
 
-		strptime( __DATE__ " "__TIME__, "%b %d %Y %H:%M:%S", &file_tm );
+		strptime( g_buildcommit_date, "%Y-%m-%d %H:%M:%S", &file_tm );
 		time = mktime( &file_tm );
 	}
 

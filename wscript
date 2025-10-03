@@ -83,7 +83,6 @@ SUBDIRS = [
 	Subproject('public'),
 	Subproject('filesystem'),
 	Subproject('stub/server'),
-	Subproject('dllemu'),
 	Subproject('3rdparty/libbacktrace'),
 
 	# disable only by engine feature, makes no sense to even parse subprojects in dedicated mode
@@ -128,7 +127,7 @@ REFDLLS = [
 ]
 
 def options(opt):
-	opt.load('reconfigure compiler_optimizations xshlib xcompile compiler_cxx compiler_c sdl2 clang_compilation_database strip_on_install waf_unit_test msvs subproject')
+	opt.load('reconfigure compiler_optimizations xshlib xcompile compiler_cxx compiler_c sdl2 clang_compilation_database strip_on_install waf_unit_test msvs subproject ninja')
 
 	grp = opt.add_option_group('Common options')
 
@@ -208,10 +207,15 @@ def configure(conf):
 		conf.env.MSVC_TARGETS = ['x86']
 
 	# Load compilers early
-	conf.load('xshlib xcompile compiler_c compiler_cxx gccdeps')
+	conf.load('xshlib xcompile compiler_c compiler_cxx')
 
-	if conf.options.MSVCDEPS:
-		conf.load('msvcdeps')
+	if not conf.options.WAFCACHE:
+		conf.load('gccdeps')
+
+		if conf.options.MSVCDEPS:
+			conf.load('msvcdeps')
+
+	conf.env.WAFCACHE = conf.options.WAFCACHE
 
 	if conf.options.NSWITCH:
 		conf.load('nswitch')
@@ -226,7 +230,7 @@ def configure(conf):
 	if conf.env.COMPILER_CC == 'msvc':
 		conf.load('msvc_pdb')
 
-	conf.load('msvs subproject clang_compilation_database strip_on_install waf_unit_test enforce_pic force_32bit')
+	conf.load('msvs subproject clang_compilation_database strip_on_install waf_unit_test enforce_pic force_32bit ninja')
 
 	conf.env.MSVC_SUBSYSTEM = 'WINDOWS'
 	conf.env.CONSOLE_SUBSYSTEM = 'CONSOLE'
@@ -348,7 +352,7 @@ def configure(conf):
 			'-Wmisleading-indentation',
 			'-Wmismatched-dealloc',
 			'-Wstringop-overflow',
-			'-Wunintialized',
+			'-Wuninitialized',
 			'-Wno-error=format-nonliteral',
 
 			# disabled, flood
@@ -535,7 +539,7 @@ int main(void) { return (int)BZ2_bzlibVersion(); }'''
 		conf.add_subproject(i.name)
 
 def build(bld):
-	if bld.options.WAFCACHE:
+	if bld.env.WAFCACHE:
 		bld.load('wafcache')
 
 	# guard rails to not let install to root

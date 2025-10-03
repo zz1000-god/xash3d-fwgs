@@ -40,15 +40,8 @@ static void CL_ParseExtraInfo( sizebuf_t *msg )
 			is_dproto_server = true;
 	}
 
-	if( MSG_ReadByte( msg ))
-	{
-		Cvar_FullSet( "sv_cheats", "1", FCVAR_READ_ONLY | FCVAR_SERVER );
-	}
-	else
-	{
-		Cvar_SetCheatState();
-		Cvar_FullSet( "sv_cheats", "0", FCVAR_READ_ONLY | FCVAR_SERVER );
-	}
+	cls.allow_cheats = MSG_ReadByte( msg ) ? true : false;
+	CL_SetCheatState( cl.maxclients > 1, cls.allow_cheats );
 }
 
 static void CL_ParseNewMovevars( sizebuf_t *msg )

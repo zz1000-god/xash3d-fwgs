@@ -167,11 +167,6 @@ extern convar_t	cl_filterstuffcmd;
 extern convar_t	rcon_password;
 extern convar_t	hpk_custom_file;
 extern convar_t	con_gamemaps;
-extern convar_t fs_mount_lv;
-extern convar_t fs_mount_hd;
-extern convar_t fs_mount_addon;
-extern convar_t fs_mount_l10n;
-extern convar_t ui_language; // historically used for UI, but now controls mounted localization directory
 
 #define Mod_AllowMaterials() ( host_allow_materials.value != 0.0f && !FBitSet( host.features, ENGINE_DISABLE_HDTEXTURES ))
 
@@ -342,9 +337,6 @@ typedef struct host_parm_s
 	qboolean apply_game_config;   // when true apply only to game cvars and ignore all other commands
 	qboolean apply_opengl_config; // when true apply only to opengl cvars and ignore all other commands
 	qboolean config_executed;     // a bit who indicated was config.cfg already executed e.g. from valve.rc
-#if XASH_DLL_LOADER
-	qboolean enabledll;
-#endif
 	qboolean textmode;
 
 	// some settings were changed and needs to global update
@@ -416,7 +408,8 @@ byte *FS_LoadFile( const char *path, fs_offset_t *filesizeptr, qboolean gamediro
 byte *FS_LoadDirectFile( const char *path, fs_offset_t *filesizeptr )
 	MALLOC_LIKE( _Mem_Free, 1 ) WARN_UNUSED_RESULT;
 void FS_Rescan_f( void );
-void FS_CheckConfig( void );
+void FS_LoadGameInfo( void );
+void FS_SaveVFSConfig( void );
 
 //
 // cmd.c
@@ -584,7 +577,7 @@ void Host_Error( const char *error, ... ) FORMAT_CHECK( 1 );
 void Host_ValidateEngineFeatures( uint32_t mask, uint32_t features );
 void Host_Frame( double time );
 void Host_Credits( void );
-void Host_ExitInMain( void );
+void Host_ExitInMain( void ) NORETURN;
 
 //
 // host_state.c
@@ -687,6 +680,8 @@ void pfnResetTutorMessageDecayData( void );
 void Con_CompleteCommand( field_t *field );
 void Cmd_AutoComplete( char *complete_string );
 void Cmd_AutoCompleteClear( void );
+void Host_InitializeConfig( file_t *f, const char *config, const char *description );
+void Host_FinalizeConfig( file_t *f, const char *config );
 
 //
 // custom.c

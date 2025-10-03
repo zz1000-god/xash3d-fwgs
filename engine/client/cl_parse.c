@@ -1003,6 +1003,10 @@ void CL_ParseServerData( sizebuf_t *msg, connprotocol_t proto )
 	}
 	else Cvar_DirectSet( &r_decals, NULL );
 
+	// for GoldSrc, it's handled by svc_goldsrc_sendextrainfo
+	if( proto != PROTO_GOLDSRC )
+		CL_SetCheatState( cl.maxclients > 1, cls.allow_cheats );
+
 	// set the background state
 	if( cls.demoplayback && ( cls.demonum != -1 ))
 		cl.background = true;
@@ -2018,10 +2022,14 @@ void CL_ParseVoiceData( sizebuf_t *msg, connprotocol_t proto )
 	if ( idx <= 0 || idx > cl.maxclients )
 		return;
 
+	// must notify client.dll about server ack'ing our local client voice data
+	if( idx == cl.playernum + 1 )
+		Voice_LoopbackAck();
+
 	if( proto == PROTO_GOLDSRC )
 	{
 		size = MSG_ReadShort( msg );
-		if ( size > VOICE_MAX_GS_DATA_SIZE )
+		if( size > VOICE_MAX_GS_DATA_SIZE )
 		{
 			Con_Printf( S_ERROR "Voice data size is too large: %d bytes (max: %d)\n", size, VOICE_MAX_GS_DATA_SIZE );
 			return;
@@ -2031,7 +2039,7 @@ void CL_ParseVoiceData( sizebuf_t *msg, connprotocol_t proto )
 	{
 		frames = MSG_ReadByte( msg );
 		size = MSG_ReadShort( msg );
-		if (size > VOICE_MAX_DATA_SIZE )
+		if( size > VOICE_MAX_DATA_SIZE )
 		{
 			Con_Printf( S_ERROR "Voice data size is too large: %d bytes (max: %d)\n", size, VOICE_MAX_DATA_SIZE );
 			return;
@@ -2592,6 +2600,7 @@ void CL_ParseServerMessage( sizebuf_t *msg )
 				else cls.state = ca_connecting;
 				cl.background = old_background;
 				cls.connect_time = MAX_HEARTBEAT;
+				cls.passed_bandwidth_test = false;
 				cls.connect_retry = 0;
 			}
 			break;
