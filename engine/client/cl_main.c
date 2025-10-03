@@ -2388,6 +2388,9 @@ static void CL_ClientConnect( connprotocol_t proto, const char *c, netadr_t from
 			return;
 		}
 
+		cls.nextcmdtime = 0.0;
+		cls.netchan.last_received = Sys_DoubleTime(); 
+
 		cls.build_num = Q_atoi( Cmd_Argv( 4 ));
 		cls.allow_cheats = false; // set by svc_goldsrc_sendextrainfo
 	}
