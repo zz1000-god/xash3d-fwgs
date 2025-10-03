@@ -25,6 +25,17 @@ GNU General Public License for more details.
 #include "pm_local.h"
 #include "multi_emulator.h"
 
+typedef struct RevTicket2013_s
+{
+	uint32_t magic;      // 0x00: повинно бути 0x4A
+	uint32_t hash;       // 0x04: revHash(hashStr)
+	uint32_t marker;     // 0x08: 'rev\0' (0x00766572)
+	uint32_t zero;       // 0x0C: 0
+	uint32_t steamId;    // 0x10: hash << 1
+	uint32_t unknown;    // 0x14
+	char hashStr[128];   // 0x18: MD5 hash string
+} RevTicket2013_t;
+
 #define MAX_CMD_BUFFER        8000
 #define CL_CONNECTION_TIMEOUT 15.0f
 #define CL_CONNECTION_RETRIES 10
@@ -1064,11 +1075,23 @@ static void CL_WriteSteamTicket( sizebuf_t *send )
 	CRC32_ProcessBuffer( &crc, s, Q_strlen( s ));
 	crc = CRC32_Final( crc );
 	i = GenerateRevEmu2013( buf, s, crc );
-	MSG_WriteBytes( send, buf, i );
+	MSG_WriteBytes( send, buf, 0x98 );
 
-	 //RevEmu2013: pTicket[1] = revHash (low), pTicket[5] = 0x01100001 (high)
-	*(uint32_t*)cls.steamid = LittleLong( ((uint32_t*)buf)[1] );
-	*(uint32_t*)(cls.steamid + 4) = LittleLong( ((uint32_t*)buf)[5] );
+	// Зберігаємо SteamID правильно
+	RevTicket2013_t *rev = (RevTicket2013_t *)buf;
+	*(uint32_t*)cls.steamid = rev->steamId;
+	*(uint32_t*)(cls.steamid + 4) = 0x01100001;
+}
+
+static uint32_t revHash_func( const char *str )
+{
+	uint32_t hash = 0x4E67C6A7;
+	int c;
+	
+	while(( c = *str++ ))
+		hash ^= (hash >> 2) + c + 32 * hash;
+	
+	return hash;
 }
 
 /*
@@ -2389,7 +2412,7 @@ static void CL_ClientConnect( connprotocol_t proto, const char *c, netadr_t from
 		}
 
 		cls.nextcmdtime = 0.0;
-		cls.netchan.last_received = Sys_DoubleTime(); 
+		cls.netchan.cleartime = 0.0;
 
 		cls.build_num = Q_atoi( Cmd_Argv( 4 ));
 		cls.allow_cheats = false; // set by svc_goldsrc_sendextrainfo
