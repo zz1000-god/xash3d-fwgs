@@ -1036,6 +1036,22 @@ static void CL_WriteSteamTicket( sizebuf_t *send )
 		return;
 	}
 
+	if( !Q_strcmp( cl_ticket_generator.string, "dproto" ))
+	{
+		// Простіший ticket для dproto - заповнюємо нулями або мінімальними даними
+		memset( buf, 0, 512 );
+		
+		// Можливо dproto очікує якісь специфічні байти
+		// Експериментуйте з цими значеннями
+		buf[0] = 0x01; // версія?
+		MSG_WriteBytes( send, buf, 512 );
+		
+		// Генеруємо простий SteamID
+		*(uint32_t*)cls.steamid = COM_RandomLong( 1, 0x7FFFFFFF );
+		*(uint32_t*)(cls.steamid + 4) = 0x01100001;
+		return;
+	}
+
 	//if( !Q_strcmp( cl_ticket_generator.string, "steam" )
 	//{
 		//i = SteamBroker_InitiateGameConnection( buf, sizeof( buf ));
@@ -1108,6 +1124,26 @@ static void CL_SendConnectPacket( connprotocol_t proto, int challenge )
 		Info_SetValueForKey( protinfo, "raw", "steam", sizeof( protinfo ));
 		CL_GetCDKey( protinfo, sizeof( protinfo ));
 
+		if( *(uint32_t*)cls.steamid != 0 )
+		{
+			char steamid_str[32];
+			uint32_t lo = *(uint32_t*)cls.steamid;
+			uint32_t hi = *(uint32_t*)(cls.steamid + 4);
+		
+			// Конвертуємо в STEAM_0:Y:Z формат
+			uint32_t universe = (hi >> 24) & 0xFF;
+			uint32_t account_id = lo;
+			uint32_t y = account_id & 1;
+			uint32_t z = account_id >> 1;
+		
+			Q_snprintf( steamid_str, sizeof(steamid_str), "STEAM_%d:%d:%d", universe, y, z );
+			Info_SetValueForKey( cls.userinfo, "*sid", steamid_str, sizeof( cls.userinfo ));
+		}
+	
+	// Додаємо інші важливі змінні для dproto
+		Info_SetValueForKey( cls.userinfo, "_vgui", "1", sizeof( cls.userinfo ));
+		Info_SetValueForKey( cls.userinfo, "_ah", "0", sizeof( cls.userinfo ));
+		
 		// remove keys set for legacy protocol
 		Info_RemoveKey( cls.userinfo, "cl_maxpacket" );
 		Info_RemoveKey( cls.userinfo, "cl_maxpayload" );
