@@ -271,6 +271,21 @@ void CL_SignonReply( connprotocol_t proto )
 	switch( cls.signon )
 	{
 	case 1:
+		if( proto == PROTO_GOLDSRC )
+		{
+			// Форсуємо негайну відправку
+			cls.nextcmdtime = 0.0;
+			cls.netchan.cleartime = 0.0;
+			
+			CL_ServerCommand( true, "sendents" );
+			
+			// НЕГАЙНО відправляємо буфер
+			if( MSG_GetNumBitsWritten( &cls.netchan.message ) > 0 )
+			{
+				Netchan_Transmit( &cls.netchan, 0, NULL );
+			}
+		}
+		else
 		CL_ServerCommand( true, proto == PROTO_GOLDSRC ? "sendents" : "begin" );
 		if( host_developer.value >= DEV_EXTENDED )
 			Mem_PrintStats();
@@ -757,10 +772,24 @@ static void CL_WritePacket( void )
 	if( cls.demoplayback || cls.state < ca_connected || cls.state == ca_cinematic )
 		return;
 
+	qboolean force_send = false;
+	if( proto == PROTO_GOLDSRC && cls.state == ca_connected && cls.signon < SIGNONS )
+	{
+		force_send = true;
+		cls.nextcmdtime = 0.0;
+	}
+	
 	if( cls.state < min_state )
 	{
-		Netchan_TransmitBits( &cls.netchan, 0, "" );
-		return;
+		if( proto == PROTO_GOLDSRC && cls.state == ca_connected )
+		{
+			// Продовжуємо виконання
+		}
+		else
+		{
+			Netchan_TransmitBits( &cls.netchan, 0, "" );
+			return;
+		}
 	}
 	// cls.state can only be ca_validate or ca_active from here
 
@@ -803,7 +832,7 @@ static void CL_WritePacket( void )
 	// can send this command?
 	pcmd = &cl.commands[cls.netchan.outgoing_sequence & CL_UPDATE_MASK];
 
-	if( cl.maxclients == 1 || ( NET_IsLocalAddress( cls.netchan.remote_address ) && !host_limitlocal.value ) || ( host.realtime >= cls.nextcmdtime && Netchan_CanPacket( &cls.netchan, true )))
+	if( force_send || cl.maxclients == 1 || ( NET_IsLocalAddress( cls.netchan.remote_address ) && !host_limitlocal.value ) || ( host.realtime >= cls.nextcmdtime && Netchan_CanPacket( &cls.netchan, true )))
 		pcmd->heldback = false;
 	else pcmd->heldback = true;
 
@@ -1690,6 +1719,14 @@ static void CL_Reconnect( qboolean setup_netchan )
 		// clear channel and stuff
 		Netchan_Clear( &cls.netchan );
 		MSG_Clear( &cls.netchan.message );
+	}
+
+	if( cls.legacymode == PROTO_GOLDSRC )
+	{
+		// Скидаємо всі затримки
+		cls.nextcmdtime = 0.0;
+		cls.netchan.cleartime = 0.0;
+		cls.netchan.last_received = Sys_DoubleTime();
 	}
 
 	cls.demonum = cls.movienum = -1;	// not in the demo loop now
