@@ -25,17 +25,6 @@ GNU General Public License for more details.
 #include "pm_local.h"
 #include "multi_emulator.h"
 
-typedef struct RevTicket2013_s
-{
-	uint32_t magic;      // 0x00: повинно бути 0x4A
-	uint32_t hash;       // 0x04: revHash(hashStr)
-	uint32_t marker;     // 0x08: 'rev\0' (0x00766572)
-	uint32_t zero;       // 0x0C: 0
-	uint32_t steamId;    // 0x10: hash << 1
-	uint32_t unknown;    // 0x14
-	char hashStr[128];   // 0x18: MD5 hash string
-} RevTicket2013_t;
-
 #define MAX_CMD_BUFFER        8000
 #define CL_CONNECTION_TIMEOUT 15.0f
 #define CL_CONNECTION_RETRIES 10
@@ -271,23 +260,6 @@ void CL_SignonReply( connprotocol_t proto )
 	switch( cls.signon )
 	{
 	case 1:
-		if( proto == PROTO_GOLDSRC )
-		{
-			// Форсуємо негайну відправку
-			cls.nextcmdtime = 0.0;
-			cls.netchan.cleartime = 0.0;
-			
-			CL_ServerCommand( true, "sendents" );
-			
-			if( MSG_GetNumBitsWritten( &cls.netchan.message ) > 0 )
-			{
-				Netchan_TransmitBits( &cls.netchan, 
-					MSG_GetNumBitsWritten( &cls.netchan.message ), 
-					MSG_GetData( &cls.netchan.message ));
-				MSG_Clear( &cls.netchan.message );
-			}
-		}
-		else
 		CL_ServerCommand( true, proto == PROTO_GOLDSRC ? "sendents" : "begin" );
 		if( host_developer.value >= DEV_EXTENDED )
 			Mem_PrintStats();
@@ -761,13 +733,6 @@ static void CL_WritePacket( void )
 	int numbackup, maxbackup, maxcmds;
 	const connprotocol_t proto = cls.legacymode;
 
-	if( cls.legacymode == PROTO_GOLDSRC && cls.state == ca_active )
-	{
-		Con_DPrintf( "CL_WritePacket: state=%d signon=%d heldback=%d nextcmd=%.2f realtime=%.2f\n",
-			cls.state, cls.signon, pcmd ? pcmd->heldback : -1, 
-			cls.nextcmdtime, host.realtime );
-	}
-	
 	// FIXME: on Xash protocol we don't send move commands until ca_active
 	// to prevent outgoing_command outrun incoming_acknowledged
 	// which is fatal for some buggy mods like TFC
@@ -783,11 +748,8 @@ static void CL_WritePacket( void )
 
 	if( cls.state < min_state )
 	{
-		if( !(proto == PROTO_GOLDSRC && cls.state == ca_connected) )
-		{
-			Netchan_TransmitBits( &cls.netchan, 0, "" );
-			return;
-		}
+		Netchan_TransmitBits( &cls.netchan, 0, "" );
+		return;
 	}
 	// cls.state can only be ca_validate or ca_active from here
 
@@ -817,22 +779,6 @@ static void CL_WritePacket( void )
 	if( proto == PROTO_GOLDSRC && cls.build_num >= 5971 )
 		maxcmds = MAX_GOLDSRC_EXTENDED_TOTAL_CMDS - numbackup;
 
-	if( proto == PROTO_GOLDSRC )
-	{
-		// Для GoldSrc мінімум 30 cmd/sec
-		if( cl_cmdrate.value < 30.0f )
-			Cvar_DirectSet( &cl_cmdrate, "30" );
-		else if( cl_cmdrate.value > 100.0f )
-			Cvar_DirectSet( &cl_cmdrate, "100" );
-	}
-	else
-	{
-		if( cl_cmdrate.value < 10.0f )
-			Cvar_DirectSet( &cl_cmdrate, "10" );
-		else if( cl_cmdrate.value > 100.0f )
-			Cvar_DirectSet( &cl_cmdrate, "100" );
-	}
-	
 	// clamp cmdrate
 	if( cl_cmdrate.value < 10.0f )
 		Cvar_DirectSet( &cl_cmdrate, "10" );
@@ -841,37 +787,14 @@ static void CL_WritePacket( void )
 
 	// are we hltv spectator?
 	if( cls.spectator && cl.delta_sequence == cl.validsequence && ( !cls.demorecording || !cls.demowaiting ) && cls.nextcmdtime + 1.0f > host.realtime )
-	{
 		return;
-	}
-	
+
 	// can send this command?
 	pcmd = &cl.commands[cls.netchan.outgoing_sequence & CL_UPDATE_MASK];
 
-	qboolean can_send = false;
-	
-	if( cl.maxclients == 1 || 
-	    (NET_IsLocalAddress( cls.netchan.remote_address ) && !host_limitlocal.value ))
-	{
-		can_send = true;
-	}
-	else if( proto == PROTO_GOLDSRC )
-	{
-		// Для GoldSrc - більш агресивна відправка
-		if( Netchan_CanPacket( &cls.netchan, true ))
-			can_send = true;
-	}
-	else
-	{
-		// Оригінальна логіка для інших протоколів
-		if( host.realtime >= cls.nextcmdtime && Netchan_CanPacket( &cls.netchan, true ))
-			can_send = true;
-	}
-
-	if( can_send )
+	if( cl.maxclients == 1 || ( NET_IsLocalAddress( cls.netchan.remote_address ) && !host_limitlocal.value ) || ( host.realtime >= cls.nextcmdtime && Netchan_CanPacket( &cls.netchan, true )))
 		pcmd->heldback = false;
-	else 
-		pcmd->heldback = true;
+	else pcmd->heldback = true;
 
 	// immediately add it to the demo, regardless if we send the message or not
 	if( cls.demorecording )
@@ -1113,22 +1036,6 @@ static void CL_WriteSteamTicket( sizebuf_t *send )
 		return;
 	}
 
-	if( !Q_strcmp( cl_ticket_generator.string, "dproto" ))
-	{
-		// Простіший ticket для dproto - заповнюємо нулями або мінімальними даними
-		memset( buf, 0, 512 );
-		
-		// Можливо dproto очікує якісь специфічні байти
-		// Експериментуйте з цими значеннями
-		buf[0] = 0x01; // версія?
-		MSG_WriteBytes( send, buf, 512 );
-		
-		// Генеруємо простий SteamID
-		*(uint32_t*)cls.steamid = COM_RandomLong( 1, 0x7FFFFFFF );
-		*(uint32_t*)(cls.steamid + 4) = 0x01100001;
-		return;
-	}
-
 	//if( !Q_strcmp( cl_ticket_generator.string, "steam" )
 	//{
 		//i = SteamBroker_InitiateGameConnection( buf, sizeof( buf ));
@@ -1141,23 +1048,11 @@ static void CL_WriteSteamTicket( sizebuf_t *send )
 	CRC32_ProcessBuffer( &crc, s, Q_strlen( s ));
 	crc = CRC32_Final( crc );
 	i = GenerateRevEmu2013( buf, s, crc );
-	MSG_WriteBytes( send, buf, 0x98 );
+	MSG_WriteBytes( send, buf, i );
 
-	// Зберігаємо SteamID правильно
-	RevTicket2013_t *rev = (RevTicket2013_t *)buf;
-	*(uint32_t*)cls.steamid = rev->steamId;
-	*(uint32_t*)(cls.steamid + 4) = 0x01100001;
-}
-
-static uint32_t revHash_func( const char *str )
-{
-	uint32_t hash = 0x4E67C6A7;
-	int c;
-	
-	while(( c = *str++ ))
-		hash ^= (hash >> 2) + c + 32 * hash;
-	
-	return hash;
+	 //RevEmu2013: pTicket[1] = revHash (low), pTicket[5] = 0x01100001 (high)
+	*(uint32_t*)cls.steamid = LittleLong( ((uint32_t*)buf)[1] );
+	*(uint32_t*)(cls.steamid + 4) = LittleLong( ((uint32_t*)buf)[5] );
 }
 
 /*
@@ -1213,26 +1108,6 @@ static void CL_SendConnectPacket( connprotocol_t proto, int challenge )
 		Info_SetValueForKey( protinfo, "raw", "steam", sizeof( protinfo ));
 		CL_GetCDKey( protinfo, sizeof( protinfo ));
 
-		if( *(uint32_t*)cls.steamid != 0 )
-		{
-			char steamid_str[32];
-			uint32_t lo = *(uint32_t*)cls.steamid;
-			uint32_t hi = *(uint32_t*)(cls.steamid + 4);
-		
-			// Конвертуємо в STEAM_0:Y:Z формат
-			uint32_t universe = (hi >> 24) & 0xFF;
-			uint32_t account_id = lo;
-			uint32_t y = account_id & 1;
-			uint32_t z = account_id >> 1;
-		
-			Q_snprintf( steamid_str, sizeof(steamid_str), "STEAM_%d:%d:%d", universe, y, z );
-			Info_SetValueForKey( cls.userinfo, "*sid", steamid_str, sizeof( cls.userinfo ));
-		}
-	
-	// Додаємо інші важливі змінні для dproto
-		Info_SetValueForKey( cls.userinfo, "_vgui", "1", sizeof( cls.userinfo ));
-		Info_SetValueForKey( cls.userinfo, "_ah", "0", sizeof( cls.userinfo ));
-		
 		// remove keys set for legacy protocol
 		Info_RemoveKey( cls.userinfo, "cl_maxpacket" );
 		Info_RemoveKey( cls.userinfo, "cl_maxpayload" );
@@ -1756,14 +1631,6 @@ static void CL_Reconnect( qboolean setup_netchan )
 		// clear channel and stuff
 		Netchan_Clear( &cls.netchan );
 		MSG_Clear( &cls.netchan.message );
-	}
-
-	if( cls.legacymode == PROTO_GOLDSRC )
-	{
-		// Скидаємо всі затримки
-		cls.nextcmdtime = 0.0;
-		cls.netchan.cleartime = 0.0;
-		cls.netchan.last_received = Sys_DoubleTime();
 	}
 
 	cls.demonum = cls.movienum = -1;	// not in the demo loop now
@@ -2485,9 +2352,6 @@ static void CL_ClientConnect( connprotocol_t proto, const char *c, netadr_t from
 			return;
 		}
 
-		cls.nextcmdtime = 0.0;
-		cls.netchan.cleartime = 0.0;
-
 		cls.build_num = Q_atoi( Cmd_Argv( 4 ));
 		cls.allow_cheats = false; // set by svc_goldsrc_sendextrainfo
 	}
@@ -2942,7 +2806,7 @@ static void CL_ReadPackets( void )
 			return;
 		}
 	}
-	
+
 }
 
 /*
