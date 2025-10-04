@@ -279,10 +279,12 @@ void CL_SignonReply( connprotocol_t proto )
 			
 			CL_ServerCommand( true, "sendents" );
 			
-			// НЕГАЙНО відправляємо буфер
 			if( MSG_GetNumBitsWritten( &cls.netchan.message ) > 0 )
 			{
-				Netchan_Transmit( &cls.netchan, 0, NULL );
+				Netchan_TransmitBits( &cls.netchan, 
+					MSG_GetNumBitsWritten( &cls.netchan.message ), 
+					MSG_GetData( &cls.netchan.message ));
+				MSG_Clear( &cls.netchan.message );
 			}
 		}
 		else
@@ -772,20 +774,17 @@ static void CL_WritePacket( void )
 	if( cls.demoplayback || cls.state < ca_connected || cls.state == ca_cinematic )
 		return;
 
-	qboolean force_send = false;
-	if( proto == PROTO_GOLDSRC && cls.state == ca_connected && cls.signon < SIGNONS )
+	qboolean bypass_delays = (proto == PROTO_GOLDSRC && cls.state == ca_connected && cls.signon < SIGNONS);
+	
+	if( bypass_delays )
 	{
-		force_send = true;
 		cls.nextcmdtime = 0.0;
+		cls.netchan.cleartime = 0.0;
 	}
 	
 	if( cls.state < min_state )
 	{
-		if( proto == PROTO_GOLDSRC && cls.state == ca_connected )
-		{
-			// Продовжуємо виконання
-		}
-		else
+		if( !(proto == PROTO_GOLDSRC && cls.state == ca_connected) )
 		{
 			Netchan_TransmitBits( &cls.netchan, 0, "" );
 			return;
@@ -832,9 +831,17 @@ static void CL_WritePacket( void )
 	// can send this command?
 	pcmd = &cl.commands[cls.netchan.outgoing_sequence & CL_UPDATE_MASK];
 
-	if( force_send || cl.maxclients == 1 || ( NET_IsLocalAddress( cls.netchan.remote_address ) && !host_limitlocal.value ) || ( host.realtime >= cls.nextcmdtime && Netchan_CanPacket( &cls.netchan, true )))
+	if( bypass_delays || 
+	    cl.maxclients == 1 || 
+	    (NET_IsLocalAddress( cls.netchan.remote_address ) && !host_limitlocal.value) || 
+	    (host.realtime >= cls.nextcmdtime && Netchan_CanPacket( &cls.netchan, true )))
+	{
 		pcmd->heldback = false;
-	else pcmd->heldback = true;
+	}
+	else 
+	{
+		pcmd->heldback = true;
+	}
 
 	// immediately add it to the demo, regardless if we send the message or not
 	if( cls.demorecording )
