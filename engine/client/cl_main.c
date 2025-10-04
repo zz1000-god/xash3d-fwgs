@@ -761,6 +761,13 @@ static void CL_WritePacket( void )
 	int numbackup, maxbackup, maxcmds;
 	const connprotocol_t proto = cls.legacymode;
 
+	if( cls.legacymode == PROTO_GOLDSRC && cls.state == ca_active )
+	{
+		Con_DPrintf( "CL_WritePacket: state=%d signon=%d heldback=%d nextcmd=%.2f realtime=%.2f\n",
+			cls.state, cls.signon, pcmd ? pcmd->heldback : -1, 
+			cls.nextcmdtime, host.realtime );
+	}
+	
 	// FIXME: on Xash protocol we don't send move commands until ca_active
 	// to prevent outgoing_command outrun incoming_acknowledged
 	// which is fatal for some buggy mods like TFC
@@ -774,20 +781,23 @@ static void CL_WritePacket( void )
 	if( cls.demoplayback || cls.state < ca_connected || cls.state == ca_cinematic )
 		return;
 
-	qboolean bypass_delays = (proto == PROTO_GOLDSRC && cls.state == ca_connected && cls.signon < SIGNONS);
+	qboolean bypass_delays = false;
 	
-	if( bypass_delays )
+	if( proto == PROTO_GOLDSRC )
 	{
-		cls.nextcmdtime = 0.0;
-		cls.netchan.cleartime = 0.0;
-	}
-	
-	if( cls.state < min_state )
-	{
-		if( !(proto == PROTO_GOLDSRC && cls.state == ca_connected) )
+		// Під час підключення - повністю ігноруємо затримки
+		if( cls.state == ca_connected && cls.signon < SIGNONS )
 		{
-			Netchan_TransmitBits( &cls.netchan, 0, "" );
-			return;
+			bypass_delays = true;
+			cls.nextcmdtime = 0.0;
+			cls.netchan.cleartime = 0.0;
+		}
+		// Після підключення - мінімальні затримки
+		else if( cls.state == ca_active )
+		{
+			// Відправляємо частіше для GoldSrc
+			if( host.realtime >= cls.nextcmdtime - 0.01 )
+				bypass_delays = true;
 		}
 	}
 	// cls.state can only be ca_validate or ca_active from here
@@ -826,8 +836,11 @@ static void CL_WritePacket( void )
 
 	// are we hltv spectator?
 	if( cls.spectator && cl.delta_sequence == cl.validsequence && ( !cls.demorecording || !cls.demowaiting ) && cls.nextcmdtime + 1.0f > host.realtime )
+	{
+		if (!bypass_delays)
 		return;
-
+	}
+	
 	// can send this command?
 	pcmd = &cl.commands[cls.netchan.outgoing_sequence & CL_UPDATE_MASK];
 
@@ -2913,6 +2926,16 @@ static void CL_ReadPackets( void )
 		}
 	}
 
+	if( cls.legacymode == PROTO_GOLDSRC && cls.state == ca_active )
+	{
+		static double last_force_send = 0.0;
+		if( host.realtime - last_force_send > 0.5 ) // кожні 0.5 сек
+		{
+			CL_SendCommand();
+			last_force_send = host.realtime;
+		}
+	}
+	
 }
 
 /*
