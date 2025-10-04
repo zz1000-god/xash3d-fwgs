@@ -781,23 +781,12 @@ static void CL_WritePacket( void )
 	if( cls.demoplayback || cls.state < ca_connected || cls.state == ca_cinematic )
 		return;
 
-	qboolean bypass_delays = false;
-	
-	if( proto == PROTO_GOLDSRC )
+	if( cls.state < min_state )
 	{
-		// Під час підключення - повністю ігноруємо затримки
-		if( cls.state == ca_connected && cls.signon < SIGNONS )
+		if( !(proto == PROTO_GOLDSRC && cls.state == ca_connected) )
 		{
-			bypass_delays = true;
-			cls.nextcmdtime = 0.0;
-			cls.netchan.cleartime = 0.0;
-		}
-		// Після підключення - мінімальні затримки
-		else if( cls.state == ca_active )
-		{
-			// Відправляємо частіше для GoldSrc
-			if( host.realtime >= cls.nextcmdtime - 0.01 )
-				bypass_delays = true;
+			Netchan_TransmitBits( &cls.netchan, 0, "" );
+			return;
 		}
 	}
 	// cls.state can only be ca_validate or ca_active from here
@@ -828,6 +817,22 @@ static void CL_WritePacket( void )
 	if( proto == PROTO_GOLDSRC && cls.build_num >= 5971 )
 		maxcmds = MAX_GOLDSRC_EXTENDED_TOTAL_CMDS - numbackup;
 
+	if( proto == PROTO_GOLDSRC )
+	{
+		// Для GoldSrc мінімум 30 cmd/sec
+		if( cl_cmdrate.value < 30.0f )
+			Cvar_DirectSet( &cl_cmdrate, "30" );
+		else if( cl_cmdrate.value > 100.0f )
+			Cvar_DirectSet( &cl_cmdrate, "100" );
+	}
+	else
+	{
+		if( cl_cmdrate.value < 10.0f )
+			Cvar_DirectSet( &cl_cmdrate, "10" );
+		else if( cl_cmdrate.value > 100.0f )
+			Cvar_DirectSet( &cl_cmdrate, "100" );
+	}
+	
 	// clamp cmdrate
 	if( cl_cmdrate.value < 10.0f )
 		Cvar_DirectSet( &cl_cmdrate, "10" );
@@ -837,24 +842,36 @@ static void CL_WritePacket( void )
 	// are we hltv spectator?
 	if( cls.spectator && cl.delta_sequence == cl.validsequence && ( !cls.demorecording || !cls.demowaiting ) && cls.nextcmdtime + 1.0f > host.realtime )
 	{
-		if (!bypass_delays)
 		return;
 	}
 	
 	// can send this command?
 	pcmd = &cl.commands[cls.netchan.outgoing_sequence & CL_UPDATE_MASK];
 
-	if( bypass_delays || 
-	    cl.maxclients == 1 || 
-	    (NET_IsLocalAddress( cls.netchan.remote_address ) && !host_limitlocal.value) || 
-	    (host.realtime >= cls.nextcmdtime && Netchan_CanPacket( &cls.netchan, true )))
+	qboolean can_send = false;
+	
+	if( cl.maxclients == 1 || 
+	    (NET_IsLocalAddress( cls.netchan.remote_address ) && !host_limitlocal.value ))
 	{
+		can_send = true;
+	}
+	else if( proto == PROTO_GOLDSRC )
+	{
+		// Для GoldSrc - більш агресивна відправка
+		if( Netchan_CanPacket( &cls.netchan, true ))
+			can_send = true;
+	}
+	else
+	{
+		// Оригінальна логіка для інших протоколів
+		if( host.realtime >= cls.nextcmdtime && Netchan_CanPacket( &cls.netchan, true ))
+			can_send = true;
+	}
+
+	if( can_send )
 		pcmd->heldback = false;
-	}
 	else 
-	{
 		pcmd->heldback = true;
-	}
 
 	// immediately add it to the demo, regardless if we send the message or not
 	if( cls.demorecording )
@@ -2923,16 +2940,6 @@ static void CL_ReadPackets( void )
 			Con_Printf( "\nServer connection timed out.\n" );
 			CL_Disconnect();
 			return;
-		}
-	}
-
-	if( cls.legacymode == PROTO_GOLDSRC && cls.state == ca_active )
-	{
-		static double last_force_send = 0.0;
-		if( host.realtime - last_force_send > 0.5 ) // кожні 0.5 сек
-		{
-			CL_SendCommand();
-			last_force_send = host.realtime;
 		}
 	}
 	
