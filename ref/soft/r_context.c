@@ -80,7 +80,7 @@ static qboolean GAME_EXPORT Mod_ProcessRenderData( model_t *mod, qboolean create
 	{
 	case mod_studio:
 		// ДЛЯ STUDIO МОДЕЛЕЙ - ФОРСУЄМО ЗАВАНТАЖЕННЯ ТЕКСТУР
-		if( buf && gEngfuncs.drawFuncs->Mod_StudioLoadTextures )
+		if (gEngfuncs.Mod_StudioLoadTextures)
 		{
 			studiohdr_t *phdr = (studiohdr_t *)buf;
 			
