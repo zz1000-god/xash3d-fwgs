@@ -27,6 +27,7 @@ GNU General Public License for more details.
 #if XASH_WIN32
 #include <direct.h>
 #include <io.h>
+#include "utflib.h"
 #elif XASH_DOS4GW
 #include <direct.h>
 #else
@@ -50,6 +51,18 @@ GNU General Public License for more details.
 
 #define FILE_COPY_SIZE		(1024 * 1024)
 #define SAVE_AGED_COUNT 2 // the default count of quick and auto saves
+
+#if !defined( O_BINARY )
+	#define O_BINARY 0
+#endif // !defined( O_BINARY )
+
+#if !defined( O_TEXT )
+	#define O_TEXT 0
+#endif // !defined( O_TEXT )
+
+#if !XASH_PSVITA && !XASH_NSWITCH
+	#define HAVE_DUP
+#endif // !XASH_PSVITA && !XASH_NSWITCH
 
 fs_globals_t FI;
 poolhandle_t  fs_mempool;
@@ -357,7 +370,11 @@ void FS_CreatePath( char *path )
 			// create the directory
 			save = *ofs;
 			*ofs = 0;
-			_mkdir( path );
+#if XASH_WIN32
+			_mkdir( path ); // use _wmkdir maybe?
+#else // !XASH_WIN32
+			mkdir( path, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH );
+#endif // !XASH_WIN32
 			*ofs = save;
 		}
 	}
@@ -576,7 +593,7 @@ FS_WriteGameInfo
 assume GameInfo is valid
 ================
 */
-static qboolean FS_WriteGameInfo( const char *filepath, gameinfo_t *GameInfo )
+static qboolean FS_WriteGameInfo( const char *filepath, const gameinfo_t *GameInfo )
 {
 	file_t	*f = FS_Open( filepath, "w", false ); // we in binary-mode
 	int	i, write_ambients = false;
