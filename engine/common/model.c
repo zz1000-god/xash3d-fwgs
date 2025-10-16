@@ -270,6 +270,7 @@ model_t *Mod_LoadModel( model_t *mod, qboolean crash )
 	if( mod->mempool || mod->name[0] == '*' )
 	{
 		mod->needload = NL_PRESENT;
+		Con_DPrintf("DEBUG: Model already loaded: %s (mempool=%p)\n", mod->name, mod->mempool);
 		return mod;
 	}
 
@@ -278,11 +279,13 @@ model_t *Mod_LoadModel( model_t *mod, qboolean crash )
 	// store modelname to show error
 	Q_strncpy( tempname, mod->name, sizeof( tempname ));
 	COM_FixSlashes( tempname );
+	Con_DPrintf("DEBUG: Loading model: %s\n", tempname);
 
 	buf = FS_LoadFile( tempname, &length, false );
 
 	if( !buf || length < sizeof( uint ))
 	{
+		Con_DPrintf("DEBUG: Failed to load file: %s (buf=%p, len=%d)\n", tempname, buf, length);
 		memset( mod, 0, sizeof( model_t ));
 
 		if( crash ) Host_Error( "Could not load model %s from disk\n", tempname );
@@ -290,24 +293,31 @@ model_t *Mod_LoadModel( model_t *mod, qboolean crash )
 
 		return NULL;
 	}
-
+	
 	Con_Reportf( "loading %s\n", mod->name );
 	mod->needload = NL_PRESENT;
 	mod->type = mod_bad;
-
+	
 	if( !mod->mempool )
 	{
 		char poolname[MAX_VA_STRING];
 		Q_snprintf( poolname, sizeof( poolname ), "^2%s^7", mod->name );
 		mod->mempool = Mem_AllocPool( poolname );
 	}
+
+	uint magic = *(uint *)buf;
+	Con_DPrintf("DEBUG: Model magic: 0x%08X (IDSTUDIOHEADER=0x%08X)\n", magic, IDSTUDIOHEADER);
+	
 	
 	// call the apropriate loader
 	switch( *(uint *)buf )
 	{
 	case IDSTUDIOHEADER:
+		{
+		Con_DPrintf("DEBUG: Found IDSTUDIOHEADER, calling Mod_LoadStudioModel\n");
 		Mod_LoadStudioModel( mod, buf, &loaded );
 		break;
+		}
 	case IDSPRITEHEADER:
 		Mod_LoadSpriteModel( mod, buf, &loaded );
 		break;
@@ -325,6 +335,8 @@ model_t *Mod_LoadModel( model_t *mod, qboolean crash )
 		else Con_Printf( S_ERROR "%s has unknown format\n", tempname );
 		return NULL;
 	}
+
+	Con_DPrintf("DEBUG: After loader - loaded=%d, mod->type=%d, mod->cache.data=%p\n", loaded, mod->type, mod->cache.data);
 
 	if( loaded )
 	{
