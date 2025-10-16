@@ -79,23 +79,6 @@ static qboolean GAME_EXPORT Mod_ProcessRenderData( model_t *mod, qboolean create
 	switch( mod->type )
 	{
 	case mod_studio:
-		// ДЛЯ STUDIO МОДЕЛЕЙ - ФОРСУЄМО ЗАВАНТАЖЕННЯ ТЕКСТУР
-		if (gEngfuncs.Mod_StudioLoadTextures)
-		{
-			studiohdr_t *phdr = (studiohdr_t *)buf;
-			
-			// Перевіряємо валідність header
-			if( phdr->version == STUDIO_VERSION )
-			{
-				gEngfuncs.drawFuncs->Mod_StudioLoadTextures( mod, (void *)phdr );
-				loaded = true;
-			}
-		}
-		else
-		{
-			loaded = true; // якщо buf == NULL, модель вже була завантажена
-		}
-		break;
 	case mod_brush:
 	case mod_alias:
 		loaded = true;
