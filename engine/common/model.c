@@ -214,20 +214,21 @@ model_t *Mod_FindName( const char *filename, qboolean trackCRC )
 	Q_strncpy( modname, filename, sizeof( modname ));
 
 	// search the currently loaded models
-	if( mod->mempool || mod->name[0] == '*' )
+	for( i = 0, mod = mod_known; i < mod_numknown; i++, mod++ )
 	{
-		mod->needload = NL_PRESENT;
-		
-		if( mod->type == mod_studio && mod->cache.data == NULL )
+		if( !Q_stricmp( mod->name, modname ))
 		{
-			mod->needload = NL_NEEDS_LOADED;
-		}
-		else
-		{
+			if( mod->mempool || mod->name[0] == '*' )
+			{
+				mod->needload = NL_PRESENT;
+			}
+			else
+			{
+				mod->needload = NL_NEEDS_LOADED;
+			}
 			return mod;
 		}
 	}
-
 	// find a free model slot spot
 	for( i = 0, mod = mod_known; i < mod_numknown; i++, mod++ )
 		if( !COM_CheckStringEmpty( mod->name ) ) break; // this is a valid spot
