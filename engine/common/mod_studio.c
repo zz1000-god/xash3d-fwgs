@@ -866,8 +866,13 @@ void Mod_LoadStudioModel( model_t *mod, const void *buffer, qboolean *loaded )
 	mod->mempool = Mem_AllocPool( poolname );
 	mod->type = mod_studio;
 
+	if( !mod->mempool )
+	mod->mempool = Mem_AllocPool( poolname );
+	
+	mod->type = mod_studio;
+
 	phdr = R_StudioLoadHeader( mod, buffer );
-	if( !phdr || phdr->length < sizeof( studiohdr_t )) // garbage value in length
+	if( !phdr || phdr->length < sizeof( studiohdr_t ))
 		return;	// bad model
 
 #if !XASH_DEDICATED
