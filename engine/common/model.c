@@ -293,6 +293,13 @@ model_t *Mod_LoadModel( model_t *mod, qboolean crash )
 	mod->needload = NL_PRESENT;
 	mod->type = mod_bad;
 
+	if( !mod->mempool )
+	{
+		char poolname[MAX_VA_STRING];
+		Q_snprintf( poolname, sizeof( poolname ), "^2%s^7", mod->name );
+		mod->mempool = Mem_AllocPool( poolname );
+	}
+	
 	// call the apropriate loader
 	switch( *(uint *)buf )
 	{
