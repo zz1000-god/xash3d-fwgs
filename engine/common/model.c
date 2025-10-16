@@ -214,14 +214,16 @@ model_t *Mod_FindName( const char *filename, qboolean trackCRC )
 	Q_strncpy( modname, filename, sizeof( modname ));
 
 	// search the currently loaded models
-	for( i = 0, mod = mod_known; i < mod_numknown; i++, mod++ )
+	if( mod->mempool || mod->name[0] == '*' )
 	{
-		if( !Q_stricmp( mod->name, modname ))
+		mod->needload = NL_PRESENT;
+		
+		if( mod->type == mod_studio && mod->cache.data == NULL )
 		{
-			if( mod->mempool || mod->name[0] == '*' )
-				mod->needload = NL_PRESENT;
-			else mod->needload = NL_NEEDS_LOADED;
-
+			mod->needload = NL_NEEDS_LOADED;
+		}
+		else
+		{
 			return mod;
 		}
 	}
